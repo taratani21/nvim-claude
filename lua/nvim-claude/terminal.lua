@@ -35,6 +35,7 @@ end
 
 local function open_nvim(direction)
   local config = require("nvim-claude").config
+  local context = require("nvim-claude.context")
   local size = get_size(direction)
 
   if direction == "vertical" then
@@ -47,6 +48,10 @@ local function open_nvim(direction)
   vim.api.nvim_win_set_buf(0, buf)
 
   local chan = vim.fn.termopen(config.claude_command, {
+    env = {
+      NVIM_CLAUDE_SERVER = context.get_servername(),
+      NVIM_CLAUDE_CONTEXT_FILE = context.get_context_path(),
+    },
     on_exit = function()
       state.buf = nil
       state.win = nil
@@ -74,20 +79,21 @@ end
 
 local function open_tmux(direction)
   local config = require("nvim-claude").config
+  local context = require("nvim-claude.context")
   local size = get_size(direction)
   local flag = direction == "vertical" and "-h" or "-v"
 
   local cmd = string.format(
-    "tmux split-window %s -l %d %s",
-    flag, size, config.claude_command
+    "tmux split-window %s -l %d -e NVIM_CLAUDE_SERVER=%s -e NVIM_CLAUDE_CONTEXT_FILE=%s %s",
+    flag,
+    size,
+    vim.fn.shellescape(context.get_servername()),
+    vim.fn.shellescape(context.get_context_path()),
+    config.claude_command
   )
-  local result = vim.fn.system(cmd)
+  vim.fn.system(cmd)
 
-  -- capture the new pane ID
-  local pane_id = vim.fn.trim(vim.fn.system("tmux display-message -p '#{pane_id}'"))
-  -- the new pane is now active, so we need the *last* pane's ID
-  -- actually, split-window makes the new pane active, so get it before switching back
-  pane_id = vim.fn.trim(vim.fn.system("tmux list-panes -F '#{pane_id}' | tail -1"))
+  local pane_id = vim.fn.trim(vim.fn.system("tmux list-panes -F '#{pane_id}' | tail -1"))
 
   state.tmux_pane = pane_id
   state.direction = direction
