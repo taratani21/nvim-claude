@@ -4,13 +4,25 @@ set -euo pipefail
 # Read hook input from stdin
 input=$(cat)
 
-# Clear turn diff tracking for new turn
+# Clear turn diff tracking and snapshot working tree state for new turn
 context_file="${NVIM_CLAUDE_CONTEXT_FILE:-}"
 if [ -n "$context_file" ]; then
-  snapshot_dir="$(dirname "$context_file")/snapshots"
-  manifest="$(dirname "$context_file")/manifest.json"
-  rm -rf "$snapshot_dir"
-  rm -f "$manifest"
+  base_dir="$(dirname "$context_file")"
+  rm -rf "$base_dir/snapshots"
+  rm -f "$base_dir/manifest.json"
+
+  # Create a git stash object of current state (doesn't modify working tree or stash list)
+  if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    # Stage everything temporarily to capture untracked files too
+    stash_sha=$(git stash create 2>/dev/null || true)
+    if [ -z "$stash_sha" ]; then
+      # No changes to stash — use HEAD as the baseline
+      stash_sha=$(git rev-parse HEAD 2>/dev/null || true)
+    fi
+    if [ -n "$stash_sha" ]; then
+      echo "$stash_sha" > "$base_dir/turn-baseline.sha"
+    fi
+  fi
 fi
 
 # Check if linked to a Neovim session
