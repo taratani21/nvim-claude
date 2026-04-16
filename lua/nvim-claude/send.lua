@@ -15,11 +15,10 @@ local function get_visual_selection()
 end
 
 local function format_selection(selection)
-  local file = vim.fn.expand("%:.")  -- relative path
-  local ft = vim.bo.filetype
-
-  local header = string.format("File: %s, Lines %d-%d", file, selection.start_line, selection.end_line)
-  return "[Code Context]\n" .. header .. "\n```" .. ft .. "\n" .. selection.text .. "\n```\n\n[Query]\n"
+  if selection.start_line == selection.end_line then
+    return string.format("Look at line %d of the active file.\n\n", selection.start_line)
+  end
+  return string.format("Look at lines %d-%d of the active file.\n\n", selection.start_line, selection.end_line)
 end
 
 function M.send_selection()
