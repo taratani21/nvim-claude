@@ -26,6 +26,6 @@ if [ -z "$file" ] || [ "$file" = "null" ]; then
   exit 0
 fi
 
-# Output context as plain text to stdout
-# For UserPromptSubmit hooks, stdout text is added to Claude's context
-printf '[Active File: %s]\n```%s\n%s\n```\n' "$file" "$filetype" "$contents"
+# Output JSON with additionalContext for UserPromptSubmit hooks
+context=$(printf '[Active File: %s]\n```%s\n%s\n```' "$file" "$filetype" "$contents")
+jq -n --arg ctx "$context" '{ "additionalContext": $ctx }'
