@@ -79,8 +79,12 @@ function M.write_context()
 end
 
 function M.delete_context()
-  local path = M.get_context_path()
-  os.remove(path)
+  local base_dir = vim.fn.fnamemodify(M.get_context_path(), ":h")
+  os.remove(M.get_context_path())
+  os.remove(base_dir .. "/manifest.json")
+  os.remove(base_dir .. "/turn-baseline.sha")
+  os.remove(base_dir .. "/turn-diff.patch")
+  vim.fn.delete(base_dir .. "/snapshots", "rf")
 end
 
 function M.register_autocmds()
