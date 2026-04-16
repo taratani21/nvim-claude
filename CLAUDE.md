@@ -1,6 +1,6 @@
 # nvim-claude
 
-Neovim + Claude Code integration plugin. Dual-purpose: Neovim plugin (Lua) and Claude Code plugin (hooks, MCP, skills).
+Neovim + Claude Code integration plugin. Dual-purpose: Neovim plugin (Lua) and Claude Code plugin (hooks, MCP).
 
 ## Project Structure
 
@@ -13,11 +13,10 @@ lua/nvim-claude/       Neovim plugin modules (Lua)
   diff.lua             per-turn diff view via diffview.nvim
 plugin/nvim-claude.lua user commands registration
 hooks/                 Claude Code hooks (auto-registered)
-  hooks.json           hook config (UserPromptSubmit, Stop)
+  hooks.json           hook config (SessionStart, UserPromptSubmit, Stop)
   scripts/             hook shell scripts
 servers/               MCP server source (ESM)
 dist/                  bundled MCP server (committed, no npm install needed)
-skills/                Claude Code skills
 .claude-plugin/        Claude Code plugin manifest
 .mcp.json              MCP server config
 ```
@@ -47,4 +46,5 @@ Claude Code caches plugins by version — same version = no update.
 - Context JSON stores only metadata + diagnostics, not file contents. The hook reads file contents from disk on-demand at query time.
 - Per-turn diffs use `git stash create` for non-destructive working tree snapshots. Requires a git repo.
 - MCP server uses `execFileSync` (no shell) to avoid escaping issues with `nvim --remote-send`.
+- File navigation guidance is injected via a SessionStart hook (not a skill) so it only appears when connected to a Neovim session. This avoids wasted context and failed tool calls when no session exists.
 - Status line is configured inline in user settings (not bundled) to avoid cache path breakage on version updates.

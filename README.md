@@ -91,7 +91,8 @@ To show a `🟢 nvim connected` indicator in Claude Code's status line when link
 
 1. Neovim writes the active file's metadata and LSP diagnostics to a lightweight JSON file on `BufEnter`, `BufWritePost`, and `DiagnosticChanged` (no file contents stored — just the path and diagnostics)
 2. When Claude Code is launched from the plugin, it receives `NVIM_CLAUDE_SERVER` and `NVIM_CLAUDE_CONTEXT_FILE` env vars linking it to the Neovim session
-3. A `UserPromptSubmit` hook reads the context file, loads the file contents from disk on-demand, and injects the active file + diagnostics into every query
+3. A `SessionStart` hook detects the Neovim connection and injects file navigation guidance (when to use `open_in_nvim`, pacing rules, proactive doc opening)
+4. A `UserPromptSubmit` hook reads the context file, loads the file contents from disk on-demand, and injects the active file + diagnostics into every query
 
 ### Per-Turn Diffs
 
@@ -103,7 +104,9 @@ To show a `🟢 nvim connected` indicator in Claude Code's status line when link
 
 ### File Navigation (MCP)
 
-The plugin includes an MCP server that exposes an `open_in_nvim` tool. Claude can use it to open files in your editor when you ask things like "show me where X is defined." The companion skill teaches Claude when to use the tool and to pace file openings (one per response, explain before opening another).
+The plugin includes an MCP server that exposes an `open_in_nvim` tool. Claude can use it to open files in your editor when you ask things like "show me where X is defined."
+
+When connected to a Neovim session, a `SessionStart` hook injects context that teaches Claude when and how to use the tool — including proactively opening plan documents, specs, and design docs so you can read them in your editor instead of scrolling terminal output. When there's no Neovim session, this context is not injected and the tool won't be called.
 
 ### Session Linking
 
