@@ -57,13 +57,13 @@ require("nvim-claude").setup({
 
 ## Status Line
 
-To show a `[nvim connected]` indicator in Claude Code's status line when linked to a Neovim session, add this to your `~/.claude/settings.json`:
+To show a `🟢 nvim connected` indicator in Claude Code's status line when linked to a Neovim session, add this to your `~/.claude/settings.json`:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "cat > /dev/null; [ -n \"${NVIM_CLAUDE_SERVER:-}\" ] && echo '[nvim connected]'"
+    "command": "cat > /dev/null; [ -n \"${NVIM_CLAUDE_SERVER:-}\" ] && echo '🟢 nvim connected'"
   }
 }
 ```
