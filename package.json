@@ -1,0 +1,27 @@
+{
+  "name": "nvim-claude",
+  "version": "1.0.0",
+  "description": "Neovim integration for Claude Code — active buffer context and terminal management.",
+  "type": "module",
+  "main": "servers/open-in-nvim.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taratani21/nvim-claude.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/taratani21/nvim-claude/issues"
+  },
+  "homepage": "https://github.com/taratani21/nvim-claude#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}

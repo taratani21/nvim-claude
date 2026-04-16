@@ -1,0 +1,6 @@
+{
+  "nvim-claude": {
+    "command": "node",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/servers/open-in-nvim.js"]
+  }
+}
