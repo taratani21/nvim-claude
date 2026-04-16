@@ -18,6 +18,9 @@ function M.open_turn_diff()
 
   -- Ensure diffview is loaded (may be lazy-loaded)
   require("diffview")
+
+  -- Close existing diffview if open, then open fresh
+  pcall(vim.cmd, "DiffviewClose")
   vim.cmd("DiffviewOpen " .. sha)
 end
 
