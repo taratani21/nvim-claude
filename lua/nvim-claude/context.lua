@@ -33,23 +33,36 @@ local function is_file_buffer()
   return true
 end
 
+local function get_diagnostics()
+  local buf = vim.api.nvim_get_current_buf()
+  local diags = vim.diagnostic.get(buf)
+  local result = {}
+  local severity_map = { "error", "warning", "info", "hint" }
+
+  for _, d in ipairs(diags) do
+    table.insert(result, {
+      line = d.lnum + 1,
+      severity = severity_map[d.severity] or "unknown",
+      message = d.message,
+    })
+  end
+  return result
+end
+
 function M.write_context()
   if not is_file_buffer() then
     return
   end
 
   local file = vim.fn.expand("%:.")
-  local abs_file = vim.api.nvim_buf_get_name(0)
   local ft = vim.bo.filetype
   local cwd = vim.fn.getcwd()
-  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-  local contents = table.concat(lines, "\n")
 
   local context = {
     file = file,
     filetype = ft,
     cwd = cwd,
-    contents = contents,
+    diagnostics = get_diagnostics(),
     timestamp = os.time(),
   }
 
@@ -73,7 +86,7 @@ end
 function M.register_autocmds()
   local group = vim.api.nvim_create_augroup("nvim-claude-context", { clear = true })
 
-  vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost" }, {
+  vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "DiagnosticChanged" }, {
     group = group,
     callback = function()
       M.write_context()

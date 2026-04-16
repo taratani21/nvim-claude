@@ -8,26 +8,40 @@ input=$(cat)
 context_file="${NVIM_CLAUDE_CONTEXT_FILE:-}"
 
 if [ -z "$context_file" ]; then
-  # Not linked to Neovim, no-op
   exit 0
 fi
 
 if [ ! -f "$context_file" ]; then
-  # Context file doesn't exist (Neovim may have closed)
   exit 0
 fi
 
-# Read context
+# Read metadata from context JSON
 file=$(jq -r '.file' "$context_file")
 filetype=$(jq -r '.filetype' "$context_file")
-contents=$(jq -r '.contents' "$context_file")
+cwd=$(jq -r '.cwd' "$context_file")
 
 if [ -z "$file" ] || [ "$file" = "null" ]; then
   exit 0
 fi
 
-# Output JSON with additionalContext for UserPromptSubmit hooks
-context=$(printf '[Active File: %s]\n```%s\n%s\n```' "$file" "$filetype" "$contents")
+# Read file contents from disk
+full_path="$cwd/$file"
+if [ ! -f "$full_path" ]; then
+  exit 0
+fi
+contents=$(cat "$full_path")
+
+# Format diagnostics if any exist
+diag_count=$(jq '.diagnostics | length' "$context_file")
+diag_section=""
+if [ "$diag_count" -gt 0 ]; then
+  diag_lines=$(jq -r '.diagnostics[] | "  Line \(.line) [\(.severity)]: \(.message)"' "$context_file")
+  diag_section=$(printf '\n\nDiagnostics (%d):\n%s' "$diag_count" "$diag_lines")
+fi
+
+# Build context string
+context=$(printf '[Active File: %s]%s\n```%s\n%s\n```' "$file" "$diag_section" "$filetype" "$contents")
+
 jq -n --arg ctx "$context" '{
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
