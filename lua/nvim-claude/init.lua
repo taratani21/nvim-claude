@@ -24,6 +24,7 @@ function M.setup(opts)
   vim.keymap.set("n", "<leader>cv", "<cmd>ClaudeVSplit<cr>", { desc = "Claude Code vertical split" })
   vim.keymap.set("n", "<leader>ch", "<cmd>ClaudeHSplit<cr>", { desc = "Claude Code horizontal split" })
   vim.keymap.set("v", "<leader>cp", ":'<,'>ClaudeSend<cr>", { desc = "Send selection to Claude Code" })
+  vim.keymap.set("n", "<leader>cd", "<cmd>ClaudeDiff<cr>", { desc = "Show diffs from last Claude turn" })
 end
 
 return M

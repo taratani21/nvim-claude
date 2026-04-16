@@ -18,41 +18,24 @@ if [ ! -f "$manifest" ]; then
   exit 0
 fi
 
-# Generate unified diff for all changed files
-diff_file="$(dirname "$context_file")/turn-diff.patch"
-> "$diff_file"
-
-files=$(jq -r '.[]' "$manifest")
+# Check that at least one file actually has a diff
 has_changes=false
-
-for file_path in $files; do
+for file_path in $(jq -r '.[]' "$manifest"); do
   safe_name=$(echo "$file_path" | sed 's|/|__|g')
   snapshot="$snapshot_dir/$safe_name"
-
-  if [ ! -f "$snapshot" ]; then
-    continue
-  fi
-
-  # Generate diff (diff exits 1 if files differ, which is expected)
-  file_diff=$(diff -u "$snapshot" "$file_path" \
-    --label "a/$file_path" \
-    --label "b/$file_path" 2>/dev/null || true)
-
-  if [ -n "$file_diff" ]; then
-    echo "$file_diff" >> "$diff_file"
-    echo "" >> "$diff_file"
+  if [ -f "$snapshot" ] && ! diff -q "$snapshot" "$file_path" > /dev/null 2>&1; then
     has_changes=true
+    break
   fi
 done
 
 if [ "$has_changes" = false ]; then
-  rm -f "$diff_file"
   exit 0
 fi
 
-# Open the diff in Neovim in a new tab
-nvim --server "$nvim_server" --remote-send \
-  ":tabnew $diff_file | setlocal filetype=diff buftype=nofile readonly nomodified
-" 2>/dev/null || true
+# Tell Neovim to open the diffs via the nvim-claude diff module
+nvim --server "$nvim_server" --remote-expr \
+  "luaeval(\"require('nvim-claude.diff').open_turn_diffs('$(echo "$manifest" | sed "s/'/\\\\'/g")', '$(echo "$snapshot_dir" | sed "s/'/\\\\'/g")') or 0\")" \
+  2>/dev/null || true
 
 exit 0
