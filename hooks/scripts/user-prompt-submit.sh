@@ -26,10 +26,6 @@ if [ -z "$file" ] || [ "$file" = "null" ]; then
   exit 0
 fi
 
-# Build system message with active file context
-system_message=$(printf '[Active File: %s]\n```%s\n%s\n```' "$file" "$filetype" "$contents")
-
-# Output JSON with systemMessage
-jq -n --arg msg "$system_message" '{
-  "systemMessage": $msg
-}'
+# Output context as plain text to stdout
+# For UserPromptSubmit hooks, stdout text is added to Claude's context
+printf '[Active File: %s]\n```%s\n%s\n```\n' "$file" "$filetype" "$contents"
