@@ -3,7 +3,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 
 const server = new McpServer({
   name: "nvim-claude",
@@ -27,13 +27,11 @@ server.tool(
     }
 
     try {
-      let cmd = `:e ${file}`;
-      if (line) {
-        cmd += `\\<CR>:${line}`;
-      }
-      cmd += "\\<CR>";
+      const keys = line
+        ? `:e ${file}\n:${line}\n`
+        : `:e ${file}\n`;
 
-      execSync(`nvim --server ${nvimServer} --remote-send "${cmd}"`, {
+      execFileSync("nvim", ["--server", nvimServer, "--remote-send", keys], {
         timeout: 5000,
       });
 
