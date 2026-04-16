@@ -28,4 +28,9 @@ fi
 
 # Output JSON with additionalContext for UserPromptSubmit hooks
 context=$(printf '[Active File: %s]\n```%s\n%s\n```' "$file" "$filetype" "$contents")
-jq -n --arg ctx "$context" '{ "additionalContext": $ctx }'
+jq -n --arg ctx "$context" '{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": $ctx
+  }
+}'
