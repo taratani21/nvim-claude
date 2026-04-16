@@ -16,6 +16,8 @@ function M.open_turn_diff()
     return
   end
 
+  -- Ensure diffview is loaded (may be lazy-loaded)
+  require("diffview")
   vim.cmd("DiffviewOpen " .. sha)
 end
 

@@ -28,9 +28,9 @@ if git diff --quiet "$baseline_sha" 2>/dev/null; then
   exit 0
 fi
 
-# Open diffview in Neovim comparing baseline to current working tree
-nvim --server "$nvim_server" --remote-send \
-  ":DiffviewOpen ${baseline_sha}
-" 2>/dev/null || true
+# Open diffview via our Lua module (handles lazy-loading)
+nvim --server "$nvim_server" --remote-expr \
+  "luaeval(\"require('nvim-claude.diff').open_turn_diff() or 0\")" \
+  2>/dev/null || true
 
 exit 0
