@@ -8,6 +8,7 @@
     "doc": "docs"
   },
   "scripts": {
+    "build": "esbuild servers/open-in-nvim.js --bundle --platform=node --format=cjs --minify --outfile=dist/open-in-nvim.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -23,5 +24,8 @@
   "homepage": "https://github.com/taratani21/nvim-claude#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
   }
 }
