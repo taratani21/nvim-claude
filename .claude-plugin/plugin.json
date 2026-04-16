@@ -1,5 +1,5 @@
 {
   "name": "nvim-claude",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Neovim integration for Claude Code — active buffer context and terminal management"
 }

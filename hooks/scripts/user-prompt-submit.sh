@@ -4,9 +4,16 @@ set -euo pipefail
 # Read hook input from stdin
 input=$(cat)
 
-# Check if linked to a Neovim session
+# Clear turn diff tracking for new turn
 context_file="${NVIM_CLAUDE_CONTEXT_FILE:-}"
+if [ -n "$context_file" ]; then
+  snapshot_dir="$(dirname "$context_file")/snapshots"
+  manifest="$(dirname "$context_file")/manifest.json"
+  rm -rf "$snapshot_dir"
+  rm -f "$manifest"
+fi
 
+# Check if linked to a Neovim session
 if [ -z "$context_file" ]; then
   exit 0
 fi
