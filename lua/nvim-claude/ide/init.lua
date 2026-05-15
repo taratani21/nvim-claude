@@ -91,6 +91,10 @@ function M.start()
   dispatcher:register_tool(require("nvim-claude.ide.tools.open_file"))
   dispatcher:register_tool(require("nvim-claude.ide.tools.open_diff"))
   dispatcher:register_tool(require("nvim-claude.ide.tools.get_diagnostics"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.close_all_diff_tabs"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.get_latest_selection"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.check_document_dirty"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.save_document"))
 
   require("nvim-claude.ide.events").register()
   local cfg = (require("nvim-claude").config or {}).ide or {}
