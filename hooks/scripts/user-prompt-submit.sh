@@ -4,24 +4,18 @@ set -euo pipefail
 # Read hook input from stdin
 input=$(cat)
 
+# shellcheck source=lib/snapshot.sh
+. "$(dirname "$0")/lib/snapshot.sh"
+
 # Clear turn diff tracking and snapshot working tree state for new turn
 context_file="${NVIM_CLAUDE_CONTEXT_FILE:-}"
 if [ -n "$context_file" ]; then
   base_dir="$(dirname "$context_file")"
-  rm -rf "$base_dir/snapshots"
-  rm -f "$base_dir/manifest.json"
+  rm -f "$base_dir/turn-baseline.sha" "$base_dir/turn-current.sha"
 
-  # Create a git stash object of current state (doesn't modify working tree or stash list)
-  if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
-    # Stage everything temporarily to capture untracked files too
-    stash_sha=$(git stash create 2>/dev/null || true)
-    if [ -z "$stash_sha" ]; then
-      # No changes to stash — use HEAD as the baseline
-      stash_sha=$(git rev-parse HEAD 2>/dev/null || true)
-    fi
-    if [ -n "$stash_sha" ]; then
-      echo "$stash_sha" > "$base_dir/turn-baseline.sha"
-    fi
+  baseline_sha=$(build_snapshot_commit "nvim-claude turn baseline")
+  if [ -n "$baseline_sha" ]; then
+    echo "$baseline_sha" > "$base_dir/turn-baseline.sha"
   fi
 fi
 
