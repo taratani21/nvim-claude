@@ -85,11 +85,18 @@ local function open_nvim(direction)
   -- Keep the buffer alive across hide/show cycles.
   vim.bo[buf].bufhidden = "hide"
 
+  local ide_port = require("nvim-claude.ide").port()
+  local env = {
+    NVIM_CLAUDE_SERVER = context.get_servername(),
+    NVIM_CLAUDE_CONTEXT_FILE = context.get_context_path(),
+  }
+  if ide_port then
+    env.CLAUDE_CODE_SSE_PORT = tostring(ide_port)
+    env.ENABLE_IDE_INTEGRATION = "true"
+  end
+
   local chan = vim.fn.termopen(config.claude_command, {
-    env = {
-      NVIM_CLAUDE_SERVER = context.get_servername(),
-      NVIM_CLAUDE_CONTEXT_FILE = context.get_context_path(),
-    },
+    env = env,
     on_exit = function()
       state.buf = nil
       state.win = nil
@@ -143,13 +150,22 @@ local function open_tmux(direction)
   local size = get_size(direction)
   local flag = direction == "vertical" and "-h" or "-v"
 
-  local cmd = string.format(
-    "tmux split-window %s -l %d -e NVIM_CLAUDE_SERVER=%s -e NVIM_CLAUDE_CONTEXT_FILE=%s %s",
-    flag,
-    size,
+  local ide_port = require("nvim-claude.ide").port()
+  local env_args = string.format(
+    "-e NVIM_CLAUDE_SERVER=%s -e NVIM_CLAUDE_CONTEXT_FILE=%s",
     vim.fn.shellescape(context.get_servername()),
-    vim.fn.shellescape(context.get_context_path()),
-    config.claude_command
+    vim.fn.shellescape(context.get_context_path())
+  )
+  if ide_port then
+    env_args = env_args .. string.format(
+      " -e CLAUDE_CODE_SSE_PORT=%d -e ENABLE_IDE_INTEGRATION=true",
+      ide_port
+    )
+  end
+
+  local cmd = string.format(
+    "tmux split-window %s -l %d %s %s",
+    flag, size, env_args, config.claude_command
   )
   vim.fn.system(cmd)
 

@@ -4,6 +4,9 @@ local ws = require("nvim-claude.ide.websocket")
 local M = {}
 local state = { server = nil, port = nil, clients = {}, on_message = nil, auth_token = nil }
 
+-- Per-client upgraded state. Weak keys so entries vanish when client GC'd.
+local upgraded = setmetatable({}, { __mode = "k" })
+
 local function http_response(status, body)
   return ("HTTP/1.1 %s\r\nContent-Length: %d\r\n\r\n%s"):format(status, #body, body)
 end
@@ -17,9 +20,11 @@ local function ws_accept_key(client_key)
   local guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
   -- SHA1 + Base64; nvim has neither built-in. Shell out to openssl.
   local cmd = ("printf %%s '%s%s' | openssl dgst -binary -sha1 | openssl base64"):format(client_key, guid)
-  local f = assert(io.popen(cmd))
+  local f = io.popen(cmd)
+  if not f then return nil end
   local out = f:read("*a"):gsub("%s", "")
   f:close()
+  if out == "" then return nil end
   return out
 end
 
@@ -71,10 +76,10 @@ end
 
 local function on_client_data(client, buf, chunk)
   buf = buf .. chunk
-  if not client._upgraded then
+  if not upgraded[client] then
     if buf:find("\r\n\r\n", 1, true) then
       if handle_handshake(client, buf) then
-        client._upgraded = true
+        upgraded[client] = true
         return ""
       end
     end

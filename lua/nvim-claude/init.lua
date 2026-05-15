@@ -9,6 +9,10 @@ M.config = {
     enabled = true,
     context_dir = "/tmp/nvim-claude",
   },
+  ide = {
+    enabled = true,
+    auto_start = true,
+  },
 }
 
 function M.setup(opts)
@@ -17,6 +21,14 @@ function M.setup(opts)
   -- Register context autocmds
   if M.config.context.enabled then
     require("nvim-claude.context").register_autocmds()
+  end
+
+  -- Start IDE WebSocket server
+  if M.config.ide.enabled and M.config.ide.auto_start then
+    local ok, err = pcall(require("nvim-claude.ide").start)
+    if not ok then
+      vim.notify("nvim-claude: IDE server failed to start: " .. tostring(err), vim.log.levels.WARN)
+    end
   end
 
   -- Default keybindings
