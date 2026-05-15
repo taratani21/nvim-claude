@@ -1,12 +1,12 @@
 # nvim-claude
 
-Neovim integration for Claude Code — active buffer context, per-turn diffs, file navigation, and terminal management.
+Neovim integration for Claude Code — live editor state via the IDE protocol, per-turn diffs, and terminal management.
 
 ## Features
 
+- **IDE protocol integration** — Neovim registers as a connected IDE in Claude Code (`/ide`), giving Claude live editor state and tool-driven control of the editor
 - **Active buffer awareness** — automatically includes the current file and LSP diagnostics as context in every Claude Code query
 - **Per-turn diff view** — after each Claude response, see exactly what changed in diffview.nvim with file panel navigation
-- **Open files in Neovim** — Claude can open files in your editor via an MCP tool (e.g., "show me where auth is handled")
 - **Terminal management** — open/close Claude Code in Neovim splits or tmux panes
 - **Visual selection sending** — send selected code lines to Claude with a reference to the active file
 - **Tmux-aware** — detects tmux and uses tmux panes when available
@@ -16,7 +16,7 @@ Neovim integration for Claude Code — active buffer context, per-turn diffs, fi
 
 ### As a Claude Code plugin (recommended)
 
-This installs both the Neovim plugin and the Claude Code hooks/MCP server:
+This installs both the Neovim plugin and the Claude Code hooks:
 
 ```
 /plugin marketplace add taratani21/agent-plugin-marketplace
@@ -59,6 +59,11 @@ require("nvim-claude").setup({
     enabled = true,                    -- enable active buffer context
     context_dir = "/tmp/nvim-claude",  -- where context files are written
   },
+  ide = {
+    enabled = true,               -- expose nvim as a connected IDE to Claude Code
+    auto_start = true,            -- start the WebSocket server on setup()
+    selection_throttle_ms = 100,  -- min ms between selection_changed events
+  },
 })
 ```
 
@@ -87,12 +92,28 @@ To show a `🟢 nvim connected` indicator in Claude Code's status line when link
 
 ## How It Works
 
+### IDE Protocol Integration
+
+The plugin starts a WebSocket server in Neovim that implements the Claude Code IDE protocol. Once connected, Neovim appears in Claude's `/ide` command as a registered editor, and Claude gains access to six tools:
+
+| Tool | Description |
+|---|---|
+| `getCurrentSelection` | Returns the text currently selected in the editor |
+| `getOpenEditors` | Lists all open buffers with their file paths |
+| `getWorkspaceFolders` | Returns the project root directories |
+| `getDiagnostics` | Returns LSP diagnostics for open files |
+| `openFile` | Opens a file in Neovim and jumps to a specific line |
+| `openDiff` | Opens a diff view between two versions of a file |
+
+Live `selection_changed` events are pushed to Claude as the cursor moves, so Claude always knows what you are looking at without you needing to describe it.
+
+The IDE integration works in both Neovim split and tmux pane spawn modes.
+
 ### Active Buffer Context
 
 1. Neovim writes the active file's metadata and LSP diagnostics to a lightweight JSON file on `BufEnter`, `BufWritePost`, and `DiagnosticChanged` (no file contents stored — just the path and diagnostics)
 2. When Claude Code is launched from the plugin, it receives `NVIM_CLAUDE_SERVER` and `NVIM_CLAUDE_CONTEXT_FILE` env vars linking it to the Neovim session
-3. A `SessionStart` hook detects the Neovim connection and injects file navigation guidance (when to use `open_in_nvim`, pacing rules, proactive doc opening)
-4. A `UserPromptSubmit` hook reads the context file, loads the file contents from disk on-demand, and injects the active file + diagnostics into every query
+3. A `SessionStart` hook detects the Neovim connection and injects file navigation guidance
 
 ### Per-Turn Diffs
 
@@ -101,12 +122,6 @@ To show a `🟢 nvim connected` indicator in Claude Code's status line when link
 3. When Claude finishes responding, the `Stop` hook diffs the snapshot against the current working tree and opens diffview.nvim
 4. Each new turn closes the previous diffview and opens a fresh one — no tab accumulation
 5. You can also manually view the last turn's diffs with `<leader>cd` or `:ClaudeDiff`
-
-### File Navigation (MCP)
-
-The plugin includes an MCP server that exposes an `open_in_nvim` tool. Claude can use it to open files in your editor when you ask things like "show me where X is defined."
-
-When connected to a Neovim session, a `SessionStart` hook injects context that teaches Claude when and how to use the tool — including proactively opening plan documents, specs, and design docs so you can read them in your editor instead of scrolling terminal output. When there's no Neovim session, this context is not injected and the tool won't be called.
 
 ### Session Linking
 
@@ -120,6 +135,10 @@ NVIM_CLAUDE_SERVER=/tmp/nvimXYZ123 NVIM_CLAUDE_CONTEXT_FILE=/tmp/nvim-claude/has
 
 The server address is discoverable via `:echo v:servername` in Neovim.
 
+## Migrating from <0.8.0
+
+Earlier versions included a custom `open_in_nvim` MCP tool (with an associated `servers/` directory and `npm run build` step) for opening files in Neovim. That tool has been replaced by the standard IDE-protocol `openFile` tool. No user action is required — Claude will use the new tool automatically. The `npm install` and build steps are no longer needed.
+
 ## Requirements
 
 - Neovim 0.5+
@@ -131,5 +150,4 @@ The server address is discoverable via `:echo v:servername` in Neovim.
 
 - Per-turn diffs require a git repository (uses `git stash create` for snapshots)
 - Concurrent Claude sessions in the same git repo will see each other's changes in diffs (use separate worktrees for true isolation)
-- The `open_in_nvim` MCP tool requires `nvim` to be on the PATH
 - Active buffer context reflects the last saved state (not unsaved changes)
