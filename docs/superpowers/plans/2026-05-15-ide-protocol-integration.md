@@ -292,7 +292,9 @@ git commit -m "feat(ide): add WebSocket frame codec (derived from claudecode.nvi
 **Files:**
 - Create: `lua/nvim-claude/ide/lockfile.lua`
 - Create: `tests/lockfile_test.lua`
-- Create: `tests/protocol_notes.md` (notes from Task 0.2)
+- Already exists: `tests/protocol_notes.md` (created in Task 0.2; commit it here alongside lockfile.lua)
+
+> **Protocol confirmed in Task 0.2:** Lockfile filename is `<port>.lock` (not `<pid>.lock`). The schema fields are `pid`, `workspaceFolders`, `ideName`, `transport`, `authToken` — no `port` field inside (the port IS the filename). If env var `CLAUDE_CONFIG_DIR` is set, lockfile dir is `$CLAUDE_CONFIG_DIR/ide/` instead of `~/.claude/ide/`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -301,33 +303,36 @@ git commit -m "feat(ide): add WebSocket frame codec (derived from claudecode.nvi
 package.path = package.path .. ";./lua/?.lua;./lua/?/init.lua"
 local lockfile = require("nvim-claude.ide.lockfile")
 
--- Use a tmp dir, not the real ~/.claude/ide
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp, "p")
 lockfile._set_dir_for_test(tmp)
 
 local info = {
   port = 53917,
-  authToken = "deadbeef" .. string.rep("0", 56),
-  ideName = "Neovim",
   pid = vim.fn.getpid(),
   workspaceFolders = { vim.fn.getcwd() },
+  ideName = "Neovim",
+  transport = "ws",
+  authToken = "deadbeef" .. string.rep("0", 56),
 }
 
 local path = lockfile.write(info)
 assert(path:find(tmp, 1, true), "lockfile path should be under tmp dir")
+assert(path:match("/53917%.lock$"), "filename should be <port>.lock, got: " .. path)
 assert(vim.fn.filereadable(path) == 1, "lockfile should be readable")
 
 local read_back = lockfile.read(path)
-assert(read_back.port == info.port, "port mismatch")
+-- Note: 'port' is NOT in the file body — it's only in the filename
+assert(read_back.pid == info.pid, "pid mismatch")
 assert(read_back.authToken == info.authToken, "authToken mismatch")
 assert(read_back.ideName == "Neovim", "ideName mismatch")
+assert(read_back.transport == "ws", "transport mismatch")
+assert(type(read_back.workspaceFolders) == "table", "workspaceFolders missing")
 
--- Stale reaper: a lock for pid=1 (init, never matches our nvim) should be reaped
--- only if we explicitly write a stale one.
-local stale_path = tmp .. "/99999.lock"
+-- Stale reaper: write a lockfile whose embedded pid is dead, reap should remove it.
+local stale_path = tmp .. "/9999.lock"
 local f = io.open(stale_path, "w")
-f:write(vim.fn.json_encode({ pid = 99999, port = 1 }))
+f:write(vim.json.encode({ pid = 99999999, workspaceFolders = {}, ideName = "x", transport = "ws", authToken = "x" }))
 f:close()
 lockfile.reap_stale()
 assert(vim.fn.filereadable(stale_path) == 0, "stale lockfile should be removed")
@@ -347,34 +352,49 @@ tests/run.sh
 
 Expected: module not found.
 
-- [ ] **Step 3: Write the lockfile notes file**
-
-Write `tests/protocol_notes.md` with the schema and handshake findings from Task 0.2. This is the canonical record of "what protocol Claude Code expects" for the rest of the plan to build against.
-
-- [ ] **Step 4: Implement lockfile.lua**
+- [ ] **Step 3: Implement lockfile.lua**
 
 ```lua
 local M = {}
 
-local DIR = vim.fn.expand("~/.claude/ide")
+local function default_dir()
+  local override = vim.env.CLAUDE_CONFIG_DIR
+  if override and override ~= "" then
+    return override .. "/ide"
+  end
+  return vim.fn.expand("~/.claude/ide")
+end
+
+local DIR = default_dir()
 
 function M._set_dir_for_test(d) DIR = d end
 
 local function ensure_dir()
   if vim.fn.isdirectory(DIR) == 0 then
-    vim.fn.mkdir(DIR, "p", 0700)
+    vim.fn.mkdir(DIR, "p", "0700")
   end
 end
 
-function M.path_for(pid)
-  return DIR .. "/" .. pid .. ".lock"
+--- Lockfile filename uses port (not pid) per PROTOCOL.md.
+function M.path_for(port)
+  return DIR .. "/" .. port .. ".lock"
 end
 
+--- info: { port, pid, workspaceFolders, ideName, transport, authToken }
+--- Writes everything except `port` into the file body (port = filename).
 function M.write(info)
+  assert(info.port, "lockfile.write requires info.port")
   ensure_dir()
-  local path = M.path_for(info.pid)
+  local path = M.path_for(info.port)
+  local body = {
+    pid = info.pid,
+    workspaceFolders = info.workspaceFolders,
+    ideName = info.ideName,
+    transport = info.transport,
+    authToken = info.authToken,
+  }
   local f = assert(io.open(path, "w"))
-  f:write(vim.fn.json_encode(info))
+  f:write(vim.json.encode(body))
   f:close()
   return path
 end
@@ -384,7 +404,7 @@ function M.read(path)
   if not f then return nil end
   local content = f:read("*a")
   f:close()
-  local ok, parsed = pcall(vim.fn.json_decode, content)
+  local ok, parsed = pcall(vim.json.decode, content)
   if not ok then return nil end
   return parsed
 end
@@ -394,20 +414,24 @@ function M.remove(path)
 end
 
 local function pid_alive(pid)
-  -- /proc check works on linux. On other platforms fall back to os.execute.
+  if not pid then return false end
   if vim.fn.has("linux") == 1 then
     return vim.fn.isdirectory("/proc/" .. pid) == 1
   end
   return os.execute("kill -0 " .. pid .. " 2>/dev/null") == 0
 end
 
+--- Reap lockfiles whose embedded pid is no longer alive.
+--- (Filename is the port, so we have to read each file to find the pid.)
 function M.reap_stale()
   if vim.fn.isdirectory(DIR) == 0 then return end
-  local entries = vim.fn.readdir(DIR)
-  for _, name in ipairs(entries) do
-    local pid = tonumber(name:match("^(%d+)%.lock$"))
-    if pid and not pid_alive(pid) then
-      M.remove(DIR .. "/" .. name)
+  for _, name in ipairs(vim.fn.readdir(DIR)) do
+    if name:match("%.lock$") then
+      local path = DIR .. "/" .. name
+      local body = M.read(path)
+      if not body or not pid_alive(body.pid) then
+        M.remove(path)
+      end
     end
   end
 end
@@ -437,6 +461,8 @@ git commit -m "feat(ide): add lockfile manager with stale-pid reaper"
 
 This task is wiring + integration; no unit tests (real test is the manual verification in Task 0.7).
 
+> **Protocol confirmed in Task 0.2:** Auth header is `x-claude-code-ide-authorization: <authToken>` (custom header, lowercase), NOT `Authorization: Bearer ...`. The server should also echo back any `Sec-WebSocket-Protocol` header the client sent. Bind to 127.0.0.1 only. Use a port in the 10000–65535 range (PROTOCOL.md specifies this).
+
 - [ ] **Step 1: Implement server.lua**
 
 ```lua
@@ -452,17 +478,31 @@ end
 
 local function ws_accept_key(client_key)
   local guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-  -- SHA1+Base64; vim has neither built-in. Use system tools.
+  -- SHA1 + Base64; nvim has neither built-in. Shell out to openssl.
   local cmd = ("printf %%s '%s%s' | openssl dgst -binary -sha1 | openssl base64"):format(client_key, guid)
-  local f = io.popen(cmd)
+  local f = assert(io.popen(cmd))
   local out = f:read("*a"):gsub("%s", "")
   f:close()
   return out
 end
 
+--- Header lookup is case-insensitive per RFC 7230.
+local function header(request, name)
+  for line in request:gmatch("[^\r\n]+") do
+    local k, v = line:match("^([^:]+):%s*(.+)$")
+    if k and k:lower() == name:lower() then
+      return v
+    end
+  end
+  return nil
+end
+
 local function handle_handshake(client, request)
-  local key = request:match("Sec%-WebSocket%-Key:%s*([^\r\n]+)")
-  local auth = request:match("Authorization:%s*Bearer%s+([^\r\n]+)")
+  local key = header(request, "Sec-WebSocket-Key")
+  -- PROTOCOL.md: custom auth header, NOT standard Authorization.
+  local auth = header(request, "x-claude-code-ide-authorization")
+  local subprotocol = header(request, "Sec-WebSocket-Protocol")
+
   if not key then
     client:write(http_response("400 Bad Request", "missing Sec-WebSocket-Key"))
     client:close()
@@ -473,13 +513,17 @@ local function handle_handshake(client, request)
     client:close()
     return false
   end
+
   local accept = ws_accept_key(key)
-  client:write(
-    "HTTP/1.1 101 Switching Protocols\r\n"
+  local response = "HTTP/1.1 101 Switching Protocols\r\n"
     .. "Upgrade: websocket\r\n"
     .. "Connection: Upgrade\r\n"
-    .. "Sec-WebSocket-Accept: " .. accept .. "\r\n\r\n"
-  )
+    .. "Sec-WebSocket-Accept: " .. accept .. "\r\n"
+  if subprotocol then
+    response = response .. "Sec-WebSocket-Protocol: " .. subprotocol .. "\r\n"
+  end
+  response = response .. "\r\n"
+  client:write(response)
   return true
 end
 
@@ -494,25 +538,43 @@ local function on_client_data(client, buf, chunk)
     end
     return buf
   end
-  -- After upgrade: parse WS frames.
   while true do
     local frame, rest = ws.decode_frame(buf)
     if not frame then return buf end
     buf = rest
-    if frame.opcode == 0x1 and state.on_message then
+    -- Both TEXT (0x1) and BINARY (0x2) treated as text payloads per PROTOCOL.md.
+    if (frame.opcode == 0x1 or frame.opcode == 0x2) and state.on_message then
       pcall(state.on_message, client, frame.payload)
     elseif frame.opcode == 0x8 then
       client:close()
       return ""
+    elseif frame.opcode == 0x9 then
+      -- PING → respond with PONG echoing payload
+      pcall(function()
+        client:write(ws.encode_frame({ opcode = 0xA, payload = frame.payload or "", fin = true }))
+      end)
     end
   end
+end
+
+local function pick_port()
+  -- PROTOCOL.md restricts port range to 10000–65535. Try a few candidates.
+  for _ = 1, 50 do
+    local candidate = math.random(10000, 65535)
+    local probe = uv.new_tcp()
+    local ok = pcall(function() probe:bind("127.0.0.1", candidate) end)
+    probe:close()
+    if ok then return candidate end
+  end
+  error("could not find a free port in 10000-65535")
 end
 
 function M.start(opts)
   state.on_message = opts.on_message
   state.auth_token = opts.auth_token
+  local port = pick_port()
   state.server = uv.new_tcp()
-  state.server:bind("127.0.0.1", 0)
+  state.server:bind("127.0.0.1", port)
   state.server:listen(8, function(err)
     assert(not err, err)
     local client = uv.new_tcp()
@@ -527,8 +589,8 @@ function M.start(opts)
     end)
     table.insert(state.clients, client)
   end)
-  state.port = state.server:getsockname().port
-  return state.port
+  state.port = port
+  return port
 end
 
 function M.stop()
@@ -536,6 +598,7 @@ function M.stop()
   state.clients = {}
   if state.server then state.server:close() end
   state.server = nil
+  state.port = nil
 end
 
 function M.send(client, text)
@@ -570,6 +633,9 @@ git commit -m "feat(ide): add WS server with upgrade handshake and bearer auth"
 **Files:**
 - Create: `lua/nvim-claude/ide/init.lua`
 - Modify: `lua/nvim-claude/init.lua`
+- Modify: `lua/nvim-claude/terminal.lua` — set `CLAUDE_CODE_SSE_PORT` and `ENABLE_IDE_INTEGRATION` env vars when spawning Claude
+
+> **Protocol confirmed in Task 0.2:** Claude Code discovers the IDE via two env vars: `CLAUDE_CODE_SSE_PORT=<port>` and `ENABLE_IDE_INTEGRATION=true`. Without these, Claude has no idea which lockfile to read. Task 0.7's manual verification will fail without this. The `initialize` response must declare capabilities for `logging`, `prompts`, `resources`, AND `tools` (with `listChanged` where applicable). The server must also handle `notifications/initialized` (no-op) and `prompts/list` (return empty list) — Claude sends these as part of the handshake sequence.
 
 - [ ] **Step 1: Write ide/init.lua**
 
@@ -578,7 +644,7 @@ local server = require("nvim-claude.ide.server")
 local lockfile = require("nvim-claude.ide.lockfile")
 
 local M = {}
-local state = { lockfile_path = nil, port = nil, connected = false }
+local state = { lockfile_path = nil, port = nil, auth_token = nil, connected = false }
 
 local function random_token()
   local out = {}
@@ -586,24 +652,42 @@ local function random_token()
   return table.concat(out)
 end
 
+local function send_response(client, id, result)
+  server.send(client, vim.json.encode({ jsonrpc = "2.0", id = id, result = result }))
+end
+
 local function handle_message(client, payload)
-  local ok, msg = pcall(vim.fn.json_decode, payload)
+  local ok, msg = pcall(vim.json.decode, payload)
   if not ok then return end
 
   if msg.method == "initialize" then
     state.connected = true
-    -- Response shape MUST match what's documented in tests/protocol_notes.md
-    -- (filled during Task 0.2). Adjust here based on actual findings.
-    local response = {
-      jsonrpc = "2.0",
-      id = msg.id,
-      result = {
-        protocolVersion = "2024-11-05",
-        capabilities = { tools = {} },
-        serverInfo = { name = "nvim-claude", version = "0.8.0" },
+    send_response(client, msg.id, {
+      protocolVersion = "2024-11-05",
+      capabilities = {
+        logging = vim.empty_dict(),
+        prompts = { listChanged = true },
+        resources = { subscribe = true, listChanged = true },
+        tools = { listChanged = true },
       },
-    }
-    server.send(client, vim.fn.json_encode(response))
+      serverInfo = { name = "nvim-claude", version = "0.8.0" },
+    })
+    return
+  end
+
+  if msg.method == "notifications/initialized" then
+    return -- no-op, no response (it's a notification)
+  end
+
+  if msg.method == "prompts/list" then
+    send_response(client, msg.id, { prompts = {} })
+    return
+  end
+
+  if msg.method == "tools/list" then
+    -- Phase 0: no tools registered yet. Phase 1 wires the dispatcher.
+    send_response(client, msg.id, { tools = {} })
+    return
   end
 end
 
@@ -613,13 +697,14 @@ function M.start()
   local token = random_token()
   local port = server.start({ on_message = handle_message, auth_token = token })
   state.port = port
+  state.auth_token = token
   state.lockfile_path = lockfile.write({
-    pid = vim.fn.getpid(),
     port = port,
-    authToken = token,
-    ideName = "Neovim",
+    pid = vim.fn.getpid(),
     workspaceFolders = { vim.fn.getcwd() },
+    ideName = "Neovim",
     transport = "ws",
+    authToken = token,
   })
   vim.api.nvim_create_autocmd("VimLeavePre", {
     callback = function() M.stop() end,
@@ -630,9 +715,12 @@ function M.stop()
   if state.lockfile_path then lockfile.remove(state.lockfile_path) end
   server.stop()
   state.connected = false
+  state.port = nil
+  state.auth_token = nil
 end
 
 function M.is_connected() return state.connected end
+function M.port() return state.port end
 function M.state() return state end
 
 return M
@@ -657,11 +745,56 @@ In `M.setup(opts)`, after the existing context registration, add:
   end
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Modify lua/nvim-claude/terminal.lua to pass IDE env vars**
+
+Both spawn paths must set `CLAUDE_CODE_SSE_PORT` and `ENABLE_IDE_INTEGRATION` so Claude can discover our lockfile.
+
+In `open_nvim`, change the `env` table passed to `vim.fn.termopen`:
+
+```lua
+local ide_port = require("nvim-claude.ide").port()
+local env = {
+  NVIM_CLAUDE_SERVER = context.get_servername(),
+  NVIM_CLAUDE_CONTEXT_FILE = context.get_context_path(),
+}
+if ide_port then
+  env.CLAUDE_CODE_SSE_PORT = tostring(ide_port)
+  env.ENABLE_IDE_INTEGRATION = "true"
+end
+
+local chan = vim.fn.termopen(config.claude_command, {
+  env = env,
+  on_exit = function() ... end,
+})
+```
+
+In `open_tmux`, extend the `tmux split-window` command to also pass `-e CLAUDE_CODE_SSE_PORT=<port>` and `-e ENABLE_IDE_INTEGRATION=true` when the IDE port is available. Build the env-var portion as:
+
+```lua
+local ide_port = require("nvim-claude.ide").port()
+local env_args = string.format(
+  "-e NVIM_CLAUDE_SERVER=%s -e NVIM_CLAUDE_CONTEXT_FILE=%s",
+  vim.fn.shellescape(context.get_servername()),
+  vim.fn.shellescape(context.get_context_path())
+)
+if ide_port then
+  env_args = env_args .. string.format(
+    " -e CLAUDE_CODE_SSE_PORT=%d -e ENABLE_IDE_INTEGRATION=true",
+    ide_port
+  )
+end
+
+local cmd = string.format(
+  "tmux split-window %s -l %d %s %s",
+  flag, size, env_args, config.claude_command
+)
+```
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add lua/nvim-claude/ide/init.lua lua/nvim-claude/init.lua
-git commit -m "feat(ide): minimal start/stop with lockfile and initialize handler"
+git add lua/nvim-claude/ide/init.lua lua/nvim-claude/init.lua lua/nvim-claude/terminal.lua
+git commit -m "feat(ide): minimal start/stop, IDE env vars on Claude spawn"
 ```
 
 ### Task 0.7: Decision-gate manual verification
@@ -747,23 +880,23 @@ d:register_tool({
 
 -- tools/list response shape
 local list_resp = d:dispatch('{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
-local list_decoded = vim.fn.json_decode(list_resp)
+local list_decoded = vim.json.decode(list_resp)
 assert(list_decoded.id == 1)
 assert(#list_decoded.result.tools == 1)
 assert(list_decoded.result.tools[1].name == "echo")
 
 -- tools/call invokes handler
-local call_resp = d:dispatch(vim.fn.json_encode({
+local call_resp = d:dispatch(vim.json.encode({
   jsonrpc = "2.0", id = 2, method = "tools/call",
   params = { name = "echo", arguments = { msg = "hi" } },
 }))
-local call_decoded = vim.fn.json_decode(call_resp)
+local call_decoded = vim.json.decode(call_resp)
 assert(call_decoded.id == 2)
 assert(call_decoded.result.content[1].text == "hi")
 
 -- Unknown method returns JSON-RPC error
 local err_resp = d:dispatch('{"jsonrpc":"2.0","id":3,"method":"bogus"}')
-local err_decoded = vim.fn.json_decode(err_resp)
+local err_decoded = vim.json.decode(err_resp)
 assert(err_decoded.error ~= nil, "should return error envelope")
 assert(err_decoded.error.code == -32601, "method not found = -32601")
 
@@ -791,14 +924,14 @@ function M.new()
   end
 
   local function err_response(id, code, message)
-    return vim.fn.json_encode({
+    return vim.json.encode({
       jsonrpc = "2.0", id = id,
       error = { code = code, message = message },
     })
   end
 
   function self:dispatch(payload)
-    local ok, msg = pcall(vim.fn.json_decode, payload)
+    local ok, msg = pcall(vim.json.decode, payload)
     if not ok then
       return err_response(vim.NIL, -32700, "parse error")
     end
@@ -812,7 +945,7 @@ function M.new()
           inputSchema = t.input_schema,
         })
       end
-      return vim.fn.json_encode({
+      return vim.json.encode({
         jsonrpc = "2.0", id = msg.id, result = { tools = list },
       })
     end
@@ -826,7 +959,7 @@ function M.new()
       if not handler_ok then
         return err_response(msg.id, -32603, tostring(result))
       end
-      return vim.fn.json_encode({
+      return vim.json.encode({
         jsonrpc = "2.0", id = msg.id, result = result,
       })
     end
@@ -869,7 +1002,7 @@ local rpc = require("nvim-claude.ide.rpc")
 local dispatcher = rpc.new()
 
 local function handle_message(client, payload)
-  local ok, msg = pcall(vim.fn.json_decode, payload)
+  local ok, msg = pcall(vim.json.decode, payload)
   if not ok then return end
 
   if msg.method == "initialize" then
@@ -882,7 +1015,7 @@ local function handle_message(client, payload)
         serverInfo = { name = "nvim-claude", version = "0.8.0" },
       },
     }
-    server.send(client, vim.fn.json_encode(response))
+    server.send(client, vim.json.encode(response))
     return
   end
 
@@ -953,7 +1086,7 @@ function M.handler(_)
 
   return {
     content = {
-      { type = "text", text = vim.fn.json_encode({
+      { type = "text", text = vim.json.encode({
         text = text,
         filePath = file,
         startLine = start_line, startColumn = start_col,
@@ -1013,7 +1146,7 @@ function M.handler(_)
     end
   end
   return {
-    content = { { type = "text", text = vim.fn.json_encode({ editors = editors }) } },
+    content = { { type = "text", text = vim.json.encode({ editors = editors }) } },
   }
 end
 
@@ -1049,7 +1182,7 @@ local M = {
 function M.handler(_)
   local cwd = vim.fn.getcwd()
   return {
-    content = { { type = "text", text = vim.fn.json_encode({
+    content = { { type = "text", text = vim.json.encode({
       folders = { { uri = "file://" .. cwd, name = vim.fn.fnamemodify(cwd, ":t") } },
     }) } },
   }
@@ -1098,7 +1231,7 @@ local function push_selection()
   local file = vim.api.nvim_buf_get_name(buf)
   if file == "" then return end
   local cur = vim.api.nvim_win_get_cursor(0)
-  local notif = vim.fn.json_encode({
+  local notif = vim.json.encode({
     jsonrpc = "2.0",
     method = "selection_changed",
     params = {
@@ -1383,7 +1516,7 @@ function M.handler(args)
     end
   end
 
-  return { content = { { type = "text", text = vim.fn.json_encode({ diagnostics = diagnostics }) } } }
+  return { content = { { type = "text", text = vim.json.encode({ diagnostics = diagnostics }) } } }
 end
 
 return M
