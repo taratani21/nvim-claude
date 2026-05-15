@@ -1,5 +1,6 @@
 local server = require("nvim-claude.ide.server")
 local lockfile = require("nvim-claude.ide.lockfile")
+local rpc = require("nvim-claude.ide.rpc")
 
 local M = {}
 local state = { lockfile_path = nil, port = nil, auth_token = nil, connected = false }
@@ -12,6 +13,9 @@ local function dlog(msg)
   f:write(os.date("%H:%M:%S ") .. msg .. "\n")
   f:close()
 end
+
+local dispatcher = rpc.new()
+M._dispatcher = dispatcher
 
 local function random_token()
   local out = {}
@@ -62,9 +66,14 @@ local function handle_message(client, payload)
     return
   end
 
-  if msg.method == "tools/list" then
-    -- Phase 0: no tools registered yet. Phase 1 wires the dispatcher.
-    send_response(client, msg.id, { tools = {} })
+  if msg.method == "tools/list" or msg.method == "tools/call" then
+    -- Dispatcher response payload is already a JSON-encoded JSON-RPC envelope.
+    -- Schedule onto the main loop because tool handlers may call vim API.
+    vim.schedule(function()
+      local response = dispatcher:dispatch(payload)
+      dlog("SEND " .. response)
+      server.send(client, response)
+    end)
     return
   end
 
