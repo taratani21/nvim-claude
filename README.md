@@ -117,7 +117,7 @@ The IDE integration works in both Neovim split and tmux pane spawn modes.
 
 ### Per-Turn Diffs
 
-1. When you submit a prompt, the hook creates a lightweight git snapshot of the working tree using `git stash create` (non-destructive — doesn't modify your working tree or stash list)
+1. When you submit a prompt, the hook creates a lightweight git snapshot using a temp git index to capture both tracked and untracked files (`hooks/scripts/lib/snapshot.sh`) without disturbing your actual git index
 2. Claude edits files during its turn
 3. When Claude finishes responding, the `Stop` hook diffs the snapshot against the current working tree and opens diffview.nvim
 4. Each new turn closes the previous diffview and opens a fresh one — no tab accumulation
@@ -148,6 +148,6 @@ Earlier versions included a custom `open_in_nvim` MCP tool (with an associated `
 
 ## Limitations
 
-- Per-turn diffs require a git repository (uses `git stash create` for snapshots)
+- Per-turn diffs require a git repository (uses a temp git index for snapshots)
 - Concurrent Claude sessions in the same git repo will see each other's changes in diffs (use separate worktrees for true isolation)
 - Active buffer context reflects the last saved state (not unsaved changes)
