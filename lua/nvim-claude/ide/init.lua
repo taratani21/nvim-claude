@@ -87,6 +87,7 @@ function M.start()
 
   dispatcher:register_tool(require("nvim-claude.ide.tools.get_current_selection"))
   dispatcher:register_tool(require("nvim-claude.ide.tools.get_open_editors"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.get_workspace_folders"))
 
   math.randomseed((vim.uv or vim.loop).hrtime() % 2^31)
   lockfile.reap_stale()
