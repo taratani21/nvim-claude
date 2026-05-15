@@ -88,6 +88,7 @@ function M.start()
   dispatcher:register_tool(require("nvim-claude.ide.tools.get_current_selection"))
   dispatcher:register_tool(require("nvim-claude.ide.tools.get_open_editors"))
   dispatcher:register_tool(require("nvim-claude.ide.tools.get_workspace_folders"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.open_file"))
 
   require("nvim-claude.ide.events").register()
   local cfg = (require("nvim-claude").config or {}).ide or {}
