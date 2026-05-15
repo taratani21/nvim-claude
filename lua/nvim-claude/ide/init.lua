@@ -4,6 +4,15 @@ local lockfile = require("nvim-claude.ide.lockfile")
 local M = {}
 local state = { lockfile_path = nil, port = nil, auth_token = nil, connected = false }
 
+-- Debug log path; tail with `tail -f /tmp/nvim-claude-ide.log` while testing.
+local DEBUG_LOG = "/tmp/nvim-claude-ide.log"
+local function dlog(msg)
+  local f = io.open(DEBUG_LOG, "a")
+  if not f then return end
+  f:write(os.date("%H:%M:%S ") .. msg .. "\n")
+  f:close()
+end
+
 local function random_token()
   local out = {}
   for i = 1, 32 do out[i] = string.format("%02x", math.random(0, 255)) end
@@ -11,12 +20,18 @@ local function random_token()
 end
 
 local function send_response(client, id, result)
-  server.send(client, vim.fn.json_encode({ jsonrpc = "2.0", id = id, result = result }))
+  local payload = vim.json.encode({ jsonrpc = "2.0", id = id, result = result })
+  dlog("SEND " .. payload)
+  server.send(client, payload)
 end
 
 local function handle_message(client, payload)
-  local ok, msg = pcall(vim.fn.json_decode, payload)
-  if not ok then return end
+  dlog("RECV " .. payload)
+  local ok, msg = pcall(vim.json.decode, payload)
+  if not ok then
+    dlog("PARSE_ERR " .. tostring(msg))
+    return
+  end
 
   if msg.method == "initialize" then
     state.connected = true
@@ -33,12 +48,17 @@ local function handle_message(client, payload)
     return
   end
 
-  if msg.method == "notifications/initialized" then
-    return -- no-op, no response
+  if msg.method == "notifications/initialized" or msg.method == "ide_connected" then
+    return -- no-op notifications, no response
   end
 
   if msg.method == "prompts/list" then
     send_response(client, msg.id, { prompts = {} })
+    return
+  end
+
+  if msg.method == "resources/list" then
+    send_response(client, msg.id, { resources = {} })
     return
   end
 
@@ -47,9 +67,15 @@ local function handle_message(client, payload)
     send_response(client, msg.id, { tools = {} })
     return
   end
+
+  dlog("UNHANDLED method=" .. tostring(msg.method))
 end
 
 function M.start()
+  -- Truncate debug log on each start.
+  local f = io.open(DEBUG_LOG, "w")
+  if f then f:close() end
+
   math.randomseed((vim.uv or vim.loop).hrtime() % 2^31)
   lockfile.reap_stale()
   local token = random_token()
@@ -64,6 +90,8 @@ function M.start()
     transport = "ws",
     authToken = token,
   })
+  dlog(string.format("STARTED port=%d pid=%d cwd=%s lockfile=%s",
+    port, vim.fn.getpid(), vim.fn.getcwd(), state.lockfile_path))
   vim.api.nvim_create_autocmd("VimLeavePre", {
     once = true,
     callback = function() M.stop() end,
