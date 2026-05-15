@@ -20,7 +20,7 @@ function M.setup(opts)
   end
 
   -- Default keybindings
-  vim.keymap.set("n", "<leader>ct", "<cmd>ClaudeToggle<cr>", { desc = "Toggle Claude Code" })
+  vim.keymap.set("n", "<leader>ct", "<cmd>ClaudeToggle<cr>", { desc = "Toggle Claude Code visibility" })
   vim.keymap.set("n", "<leader>cv", "<cmd>ClaudeVSplit<cr>", { desc = "Claude Code vertical split" })
   vim.keymap.set("n", "<leader>ch", "<cmd>ClaudeHSplit<cr>", { desc = "Claude Code horizontal split" })
   vim.keymap.set("v", "<leader>cp", ":'<,'>ClaudeSend<cr>", { desc = "Send selection to Claude Code" })

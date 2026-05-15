@@ -66,7 +66,7 @@ require("nvim-claude").setup({
 
 | Command | Default binding | Description |
 |---|---|---|
-| `:ClaudeToggle` | `<leader>ct` | Toggle Claude Code session |
+| `:ClaudeToggle` | `<leader>ct` | Toggle Claude Code visibility (keeps session alive) |
 | `:ClaudeVSplit` | `<leader>cv` | Open in vertical split |
 | `:ClaudeHSplit` | `<leader>ch` | Open in horizontal split |
 | `:ClaudeSend` | `<leader>cp` (visual) | Send selection to Claude Code |
