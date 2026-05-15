@@ -90,6 +90,7 @@ function M.start()
   dispatcher:register_tool(require("nvim-claude.ide.tools.get_workspace_folders"))
   dispatcher:register_tool(require("nvim-claude.ide.tools.open_file"))
   dispatcher:register_tool(require("nvim-claude.ide.tools.open_diff"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.get_diagnostics"))
 
   require("nvim-claude.ide.events").register()
   local cfg = (require("nvim-claude").config or {}).ide or {}
