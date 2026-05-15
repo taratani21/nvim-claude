@@ -86,6 +86,7 @@ function M.start()
   if f then f:close() end
 
   dispatcher:register_tool(require("nvim-claude.ide.tools.get_current_selection"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.get_open_editors"))
 
   math.randomseed((vim.uv or vim.loop).hrtime() % 2^31)
   lockfile.reap_stale()
