@@ -1,0 +1,10 @@
+nvim-claude includes WebSocket protocol code derived from claudecode.nvim
+(https://github.com/coder/claudecode.nvim), which is licensed under the
+Apache License, Version 2.0.
+
+Original copyright: Copyright (c) coder.com and contributors.
+
+The full Apache 2.0 license text is available at:
+http://www.apache.org/licenses/LICENSE-2.0
+
+Files derived from claudecode.nvim are noted in their headers.
