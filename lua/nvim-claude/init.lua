@@ -12,6 +12,7 @@ M.config = {
   ide = {
     enabled = true,
     auto_start = true,
+    selection_throttle_ms = 100,
   },
 }
 

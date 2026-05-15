@@ -89,6 +89,10 @@ function M.start()
   dispatcher:register_tool(require("nvim-claude.ide.tools.get_open_editors"))
   dispatcher:register_tool(require("nvim-claude.ide.tools.get_workspace_folders"))
 
+  require("nvim-claude.ide.events").register()
+  local cfg = (require("nvim-claude").config or {}).ide or {}
+  require("nvim-claude.ide.events").set_throttle(cfg.selection_throttle_ms or 100)
+
   math.randomseed((vim.uv or vim.loop).hrtime() % 2^31)
   lockfile.reap_stale()
   local token = random_token()
