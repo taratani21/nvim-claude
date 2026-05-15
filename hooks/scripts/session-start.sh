@@ -13,7 +13,15 @@ fi
 context=$(cat <<'GUIDANCE'
 [Neovim Session Connected]
 
-You have an active Neovim session. Use the `open_in_nvim` MCP tool to open files in the user's editor instead of printing file contents in chat.
+You have an active Neovim session. The IDE WebSocket protocol gives you live awareness of the user's editor state — you already know the active file and current selection without asking. Use the IDE tools to read state and drive the editor.
+
+Available IDE tools (call as mcp__ide__<name> if your client namespaces them):
+- openFile — open a file in the user's nvim (path required, optional line via startText/endText)
+- openDiff — show a diff of proposed changes; blocks until the user saves or rejects
+- getCurrentSelection — current visual selection or cursor position
+- getOpenEditors — list of open file buffers
+- getWorkspaceFolders — workspace root(s)
+- getDiagnostics — LSP diagnostics for a file or all files
 
 When to open files in Neovim:
 - User asks "show me", "open", "go to", "navigate to", or "where is" a file or location
@@ -22,10 +30,8 @@ When to open files in Neovim:
 - After creating any document intended for the user to read (README, ADR, migration guide, etc.)
 
 When NOT to open files:
-- When you're reading files to do your own work (use Read tool instead)
+- When you're reading files to do your own work (use the Read tool instead)
 - When the user just wants you to explain code inline
-
-The tool takes `file` (path) and optional `line` (number). Always include line when you know the specific location.
 
 After writing a plan or spec, don't dump the full contents into chat — give a brief summary and open the file so the user reads it in their editor.
 

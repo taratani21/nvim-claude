@@ -5,7 +5,7 @@ vim.g.loaded_nvim_claude = true
 
 vim.api.nvim_create_user_command("ClaudeToggle", function()
   require("nvim-claude.terminal").toggle()
-end, { desc = "Toggle Claude Code session" })
+end, { desc = "Toggle Claude Code visibility (preserves running session)" })
 
 vim.api.nvim_create_user_command("ClaudeVSplit", function()
   require("nvim-claude.terminal").open("vertical")

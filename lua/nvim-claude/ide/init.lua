@@ -1,0 +1,137 @@
+local server = require("nvim-claude.ide.server")
+local lockfile = require("nvim-claude.ide.lockfile")
+local rpc = require("nvim-claude.ide.rpc")
+
+local M = {}
+local state = { lockfile_path = nil, port = nil, auth_token = nil, connected = false }
+
+-- Debug log path; tail with `tail -f /tmp/nvim-claude-ide.log` while testing.
+local DEBUG_LOG = "/tmp/nvim-claude-ide.log"
+local function dlog(msg)
+  local f = io.open(DEBUG_LOG, "a")
+  if not f then return end
+  f:write(os.date("%H:%M:%S ") .. msg .. "\n")
+  f:close()
+end
+
+local dispatcher = rpc.new()
+M._dispatcher = dispatcher
+
+local function random_token()
+  local out = {}
+  for i = 1, 32 do out[i] = string.format("%02x", math.random(0, 255)) end
+  return table.concat(out)
+end
+
+local function send_response(client, id, result)
+  local payload = vim.json.encode({ jsonrpc = "2.0", id = id, result = result })
+  dlog("SEND " .. payload)
+  server.send(client, payload)
+end
+
+local function handle_message(client, payload)
+  dlog("RECV " .. payload)
+  local ok, msg = pcall(vim.json.decode, payload)
+  if not ok then
+    dlog("PARSE_ERR " .. tostring(msg))
+    return
+  end
+
+  if msg.method == "initialize" then
+    state.connected = true
+    send_response(client, msg.id, {
+      protocolVersion = "2024-11-05",
+      capabilities = {
+        logging = vim.empty_dict(),
+        prompts = { listChanged = true },
+        resources = { subscribe = true, listChanged = true },
+        tools = { listChanged = true },
+      },
+      serverInfo = { name = "nvim-claude", version = "0.8.0" },
+    })
+    return
+  end
+
+  if msg.method == "notifications/initialized" or msg.method == "ide_connected" then
+    return -- no-op notifications, no response
+  end
+
+  if msg.method == "prompts/list" then
+    send_response(client, msg.id, { prompts = {} })
+    return
+  end
+
+  if msg.method == "resources/list" then
+    send_response(client, msg.id, { resources = {} })
+    return
+  end
+
+  if msg.method == "tools/list" or msg.method == "tools/call" then
+    -- Dispatcher response payload is already a JSON-encoded JSON-RPC envelope.
+    -- Schedule onto the main loop because tool handlers may call vim API.
+    vim.schedule(function()
+      local response = dispatcher:dispatch(payload)
+      dlog("SEND " .. response)
+      server.send(client, response)
+    end)
+    return
+  end
+
+  dlog("UNHANDLED method=" .. tostring(msg.method))
+end
+
+function M.start()
+  -- Truncate debug log on each start.
+  local f = io.open(DEBUG_LOG, "w")
+  if f then f:close() end
+
+  dispatcher:register_tool(require("nvim-claude.ide.tools.get_current_selection"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.get_open_editors"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.get_workspace_folders"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.open_file"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.open_diff"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.get_diagnostics"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.close_all_diff_tabs"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.get_latest_selection"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.check_document_dirty"))
+  dispatcher:register_tool(require("nvim-claude.ide.tools.save_document"))
+
+  require("nvim-claude.ide.events").register()
+  local cfg = (require("nvim-claude").config or {}).ide or {}
+  require("nvim-claude.ide.events").set_throttle(cfg.selection_throttle_ms or 100)
+
+  math.randomseed((vim.uv or vim.loop).hrtime() % 2^31)
+  lockfile.reap_stale()
+  local token = random_token()
+  local port = server.start({ on_message = handle_message, auth_token = token })
+  state.port = port
+  state.auth_token = token
+  state.lockfile_path = lockfile.write({
+    port = port,
+    pid = vim.fn.getpid(),
+    workspaceFolders = { vim.fn.getcwd() },
+    ideName = "Neovim",
+    transport = "ws",
+    authToken = token,
+  })
+  dlog(string.format("STARTED port=%d pid=%d cwd=%s lockfile=%s",
+    port, vim.fn.getpid(), vim.fn.getcwd(), state.lockfile_path))
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    once = true,
+    callback = function() M.stop() end,
+  })
+end
+
+function M.stop()
+  if state.lockfile_path then lockfile.remove(state.lockfile_path) end
+  server.stop()
+  state.connected = false
+  state.port = nil
+  state.auth_token = nil
+end
+
+function M.is_connected() return state.connected end
+function M.port() return state.port end
+function M.state() return state end
+
+return M
