@@ -85,6 +85,8 @@ function M.start()
   local f = io.open(DEBUG_LOG, "w")
   if f then f:close() end
 
+  dispatcher:register_tool(require("nvim-claude.ide.tools.get_current_selection"))
+
   math.randomseed((vim.uv or vim.loop).hrtime() % 2^31)
   lockfile.reap_stale()
   local token = random_token()
